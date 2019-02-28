@@ -436,7 +436,7 @@ function internal_xml_file_read(xf::XLSXFile, filename::String) :: EzXML.Documen
     return xf.data[filename]
 end
 
-function Base.close(xl::XLSXFile)
+function Base.close(xl::AbstractXLSXFile)
     xl.io_is_open = false
     close(xl.io)
 

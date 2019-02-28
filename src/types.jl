@@ -214,6 +214,8 @@ mutable struct Workbook
     styles_xroot::Union{EzXML.Node, Nothing}
 end
 
+abstract type AbstractXLSXFile <: MSOfficePackage
+
 """
 `XLSXFile` stores all XML data from an Excel file.
 
@@ -221,7 +223,7 @@ end
 `data` stored the raw XML data. It maps internal XLSX filenames to XMLDocuments.
 `workbook` is the result of parsing `xl/workbook.xml`.
 """
-mutable struct XLSXFile <: MSOfficePackage
+mutable struct XLSXFile <: AbstractXLSXFile
     filepath::AbstractString
     use_cache_for_sheet_data::Bool # indicates wether Worksheet.cache will be fed while reading worksheet cells.
     io::ZipFile.Reader
@@ -237,6 +239,36 @@ mutable struct XLSXFile <: MSOfficePackage
         check_for_xlsx_file_format(filepath)
         io = ZipFile.Reader(filepath)
         xl = new(filepath, use_cache, io, true, Dict{String, Bool}(), Dict{String, EzXML.Document}(), Dict{String, Vector{UInt8}}(), EmptyWorkbook(), Vector{Relationship}(), is_writable)
+        xl.workbook.package = xl
+        finalizer(close, xl)
+        return xl
+    end
+end
+
+struct XLSXFileBuffer <: AbstractXLSXFile
+    source::IOBuffer
+    use_cache_for_sheet_data::Bool # indicates wether Worksheet.cache will be fed while reading worksheet cells.
+    io::ZipFile.Reader
+    io_is_open::Bool
+    files::Dict{String, Bool} # maps filename => isread bool
+    data::Dict{String, EzXML.Document} # maps filename => XMLDocument
+    binary_data::Dict{String, Vector{UInt8}} # maps filename => file content in bytes
+    workbook::Workbook
+    relationships::Vector{Relationship} # contains package level relationships
+    is_writable::Bool # indicates wether this XLSX file can be edited
+
+    function XLSXFileBuffer(source_io::IO)
+        use_cache = true
+        is_writable = false
+
+        source_buffer = IOBuffer()
+        while !eof(source_io)
+            write(source_buffer, read(source_io, UInt8))
+        end
+
+        #check_for_xlsx_file_format(filepath)
+        io = ZipFile.Reader(source_buffer)
+        xl = new(source_buffer, use_cache, io, true, Dict{String, Bool}(), Dict{String, EzXML.Document}(), Dict{String, Vector{UInt8}}(), EmptyWorkbook(), Vector{Relationship}(), is_writable)
         xl.workbook.package = xl
         finalizer(close, xl)
         return xl
